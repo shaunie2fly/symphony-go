@@ -20,6 +20,15 @@ const (
 	ErrJiraAPIStatus      = "jira_api_status"
 	ErrJiraAPIRequest     = "jira_api_request"
 	ErrJiraUnknownPayload = "jira_unknown_payload"
+
+	ErrGitHubInvalidSlug    = "github_invalid_slug"
+	ErrGitHubAPIRequest     = "github_api_request"
+	ErrGitHubAPIStatus      = "github_api_status"
+	ErrGitHubAuthFailed     = "github_auth_failed"
+	ErrGitHubForbidden      = "github_forbidden"
+	ErrGitHubNotFound       = "github_not_found"
+	ErrGitHubRateLimited    = "github_rate_limited"
+	ErrGitHubUnknownPayload = "github_unknown_payload"
 )
 
 // TrackerError is a typed error for tracker operations.

@@ -156,3 +156,43 @@ func TestValidateDispatchConfig_JiraMissingProjectSlug(t *testing.T) {
 		t.Errorf("expected error about tracker.project_slug, got: %v", err)
 	}
 }
+
+func validGitHubConfig() *Config {
+	cfg := DefaultConfig()
+	cfg.Tracker.Kind = "github"
+	cfg.Tracker.APIKey = "ghp_testtoken"
+	cfg.Tracker.ProjectSlug = "owner/repo"
+	return &cfg
+}
+
+func TestValidateDispatchConfig_GitHubValid(t *testing.T) {
+	if err := ValidateDispatchConfig(validGitHubConfig()); err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+}
+
+func TestValidateDispatchConfig_GitHubMissingProjectSlug(t *testing.T) {
+	cfg := validGitHubConfig()
+	cfg.Tracker.ProjectSlug = ""
+
+	err := ValidateDispatchConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error for missing tracker.project_slug")
+	}
+	if !strings.Contains(err.Error(), "tracker.project_slug") {
+		t.Errorf("expected error about tracker.project_slug, got: %v", err)
+	}
+}
+
+func TestValidateDispatchConfig_GitHubMissingAPIKey(t *testing.T) {
+	cfg := validGitHubConfig()
+	cfg.Tracker.APIKey = ""
+
+	err := ValidateDispatchConfig(cfg)
+	if err == nil {
+		t.Fatal("expected error for missing tracker.api_key")
+	}
+	if !strings.Contains(err.Error(), "api_key") {
+		t.Errorf("expected error about api_key, got: %v", err)
+	}
+}

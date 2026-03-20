@@ -39,9 +39,18 @@ func ValidateDispatchConfig(cfg *Config) error {
 			if cfg.Tracker.Email == "" {
 				errs = append(errs, `tracker.email is required when tracker.kind is "jira"`)
 			}
+		case "github":
+			if cfg.Tracker.ProjectSlug == "" {
+				errs = append(errs, `tracker.project_slug is required when tracker.kind is "github" (must be in owner/repo format)`)
+			}
 		default:
 			errs = append(errs, fmt.Sprintf("tracker.kind %q is not supported", cfg.Tracker.Kind))
 		}
+	}
+
+	// api_key is required for all tracker kinds
+	if cfg.Tracker.APIKey == "" {
+		errs = append(errs, "tracker.api_key is required")
 	}
 
 	// backend-specific validation
