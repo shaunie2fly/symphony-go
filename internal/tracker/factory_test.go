@@ -37,6 +37,40 @@ func TestNewTrackerClient_Jira(t *testing.T) {
 	}
 }
 
+func TestNewTrackerClient_GitHub(t *testing.T) {
+	cfg := &config.TrackerConfig{
+		Kind:        "github",
+		ProjectSlug: "owner/repo",
+		APIKey:      "ghp_testtoken",
+	}
+	client, err := NewTrackerClient(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := client.(*GitHubClient); !ok {
+		t.Errorf("expected *GitHubClient, got %T", client)
+	}
+}
+
+func TestNewTrackerClient_GitHub_InvalidSlug(t *testing.T) {
+	cfg := &config.TrackerConfig{
+		Kind:        "github",
+		ProjectSlug: "noslash",
+		APIKey:      "ghp_testtoken",
+	}
+	_, err := NewTrackerClient(cfg)
+	if err == nil {
+		t.Fatal("expected error for invalid project slug")
+	}
+	te, ok := err.(*TrackerError)
+	if !ok {
+		t.Fatalf("expected *TrackerError, got %T", err)
+	}
+	if te.Kind != ErrGitHubInvalidSlug {
+		t.Errorf("expected %s, got %s", ErrGitHubInvalidSlug, te.Kind)
+	}
+}
+
 func TestNewTrackerClient_Unknown(t *testing.T) {
 	cfg := &config.TrackerConfig{
 		Kind: "trello",
