@@ -144,10 +144,18 @@ func applyDefaults(cfg *Config, defaults *Config, raw map[string]any) {
 			cfg.Tracker.Endpoint = defaults.Tracker.Endpoint
 		}
 		if _, ok := trackerRaw["active_states"]; !ok {
-			cfg.Tracker.ActiveStates = defaults.Tracker.ActiveStates
+			if cfg.Tracker.Kind == "github" {
+				cfg.Tracker.ActiveStates = []string{"open"}
+			} else {
+				cfg.Tracker.ActiveStates = defaults.Tracker.ActiveStates
+			}
 		}
 		if _, ok := trackerRaw["terminal_states"]; !ok {
-			cfg.Tracker.TerminalStates = defaults.Tracker.TerminalStates
+			if cfg.Tracker.Kind == "github" {
+				cfg.Tracker.TerminalStates = []string{"closed"}
+			} else {
+				cfg.Tracker.TerminalStates = defaults.Tracker.TerminalStates
+			}
 		}
 	}
 

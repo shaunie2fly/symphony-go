@@ -16,42 +16,83 @@ const (
 
 // GitHubClient implements TrackerClient for GitHub's REST Issues API.
 type GitHubClient struct {
-	baseURL    string
-	token      string
-	owner      string
-	repo       string
-	httpClient *http.Client
+	baseURL     string
+	token       string
+	owner       string
+	repo        string
+	httpClient  *http.Client
+	labelStates []string // ordered non-native states used as label matchers; terminal before active
 }
 
 // NewGitHubClient creates a new GitHub REST API client.
 // projectSlug must be in "owner/repo" format.
-func NewGitHubClient(projectSlug, token string) (*GitHubClient, error) {
+// activeStates and terminalStates are the configured tracker states; any
+// non-native values (i.e. not "open" or "closed") are treated as GitHub label
+// names and stored for label-based state resolution.  Terminal label states are
+// stored before active ones so that they take priority during resolution.
+func NewGitHubClient(projectSlug, token string, activeStates, terminalStates []string) (*GitHubClient, error) {
 	parts := strings.SplitN(projectSlug, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, newTrackerError(ErrGitHubInvalidSlug,
 			fmt.Sprintf("project_slug must be in owner/repo format, got: %q", projectSlug), nil)
 	}
+	// Terminal label states first so they take priority in resolveGitHubState.
+	labelStates := extractLabelStates(terminalStates)
+	for _, s := range extractLabelStates(activeStates) {
+		if !containsString(labelStates, s) {
+			labelStates = append(labelStates, s)
+		}
+	}
 	return &GitHubClient{
-		baseURL:    githubDefaultBaseURL,
-		token:      token,
-		owner:      parts[0],
-		repo:       parts[1],
-		httpClient: &http.Client{Timeout: defaultNetTimeout},
+		baseURL:     githubDefaultBaseURL,
+		token:       token,
+		owner:       parts[0],
+		repo:        parts[1],
+		httpClient:  &http.Client{Timeout: defaultNetTimeout},
+		labelStates: labelStates,
 	}, nil
+}
+
+// isNativeGitHubState reports whether s is a native GitHub issue state.
+func isNativeGitHubState(s string) bool {
+	lower := strings.ToLower(s)
+	return lower == "open" || lower == "closed"
+}
+
+// extractLabelStates returns the lowercase non-native states from the list.
+func extractLabelStates(states []string) []string {
+	var out []string
+	for _, s := range states {
+		lower := strings.ToLower(s)
+		if !isNativeGitHubState(lower) {
+			out = append(out, lower)
+		}
+	}
+	return out
+}
+
+// containsString reports whether target is in list (case-sensitive).
+func containsString(list []string, target string) bool {
+	for _, s := range list {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }
 
 // githubIssue is a single issue from the GitHub REST API.
 type githubIssue struct {
-	Number    int            `json:"number"`
-	Title     string         `json:"title"`
-	Body      *string        `json:"body"`
-	State     string         `json:"state"`
-	HTMLURL   string         `json:"html_url"`
-	Labels    []githubLabel  `json:"labels"`
-	CreatedAt string         `json:"created_at"`
-	UpdatedAt string         `json:"updated_at"`
-	User      *githubUser    `json:"user"`
-	PullRequest *struct{}    `json:"pull_request,omitempty"`
+	Number      int           `json:"number"`
+	Title       string        `json:"title"`
+	Body        *string       `json:"body"`
+	State       string        `json:"state"`
+	HTMLURL     string        `json:"html_url"`
+	Labels      []githubLabel `json:"labels"`
+	CreatedAt   string        `json:"created_at"`
+	UpdatedAt   string        `json:"updated_at"`
+	User        *githubUser   `json:"user"`
+	PullRequest *struct{}     `json:"pull_request,omitempty"`
 }
 
 // githubLabel is a label on a GitHub issue.
@@ -67,10 +108,12 @@ type githubUser struct {
 // FetchCandidateIssues fetches issues in active states for the configured repository.
 // The activeStates parameter is translated to GitHub's native state filter:
 // "open" and "closed" are treated as native states; if neither is present,
-// "open" is used as the default.
+// "open" is used as the default.  Any remaining values are treated as label
+// names and used to filter issues server-side via the GitHub labels parameter.
 func (c *GitHubClient) FetchCandidateIssues(_ string, activeStates []string) ([]Issue, error) {
 	state := toGitHubState(activeStates)
-	return c.fetchAllPages(state)
+	labelFilter := extractLabelStates(activeStates)
+	return c.fetchAllPages(state, labelFilter)
 }
 
 // FetchIssueStatesByIDs fetches current states for specific issue numbers.
@@ -99,7 +142,7 @@ func (c *GitHubClient) FetchIssueStatesByIDs(ids []string) ([]Issue, error) {
 		if issue.PullRequest != nil {
 			continue
 		}
-		issues = append(issues, normalizeGitHubIssue(*issue, c.owner, c.repo))
+		issues = append(issues, normalizeGitHubIssue(*issue, c.owner, c.repo, c.labelStates))
 	}
 
 	return issues, nil
@@ -112,19 +155,26 @@ func (c *GitHubClient) FetchIssuesByStates(_ string, states []string) ([]Issue, 
 	}
 
 	state := toGitHubState(states)
-	return c.fetchAllPages(state)
+	labelFilter := extractLabelStates(states)
+	return c.fetchAllPages(state, labelFilter)
 }
 
 // fetchAllPages fetches all pages of issues with the given GitHub state filter.
-func (c *GitHubClient) fetchAllPages(state string) ([]Issue, error) {
+// labelFilter, when non-empty, is passed as the "labels" query parameter so that
+// GitHub returns only issues carrying at least one of the specified labels.
+func (c *GitHubClient) fetchAllPages(state string, labelFilter []string) ([]Issue, error) {
 	var allIssues []Issue
 	page := 1
 
 	for {
-		url := fmt.Sprintf("%s/repos/%s/%s/issues?state=%s&per_page=%d&page=%d",
+		reqURL := fmt.Sprintf("%s/repos/%s/%s/issues?state=%s&per_page=%d&page=%d",
 			c.baseURL, c.owner, c.repo, state, githubDefaultPageSize, page)
 
-		raw, err := c.doRequest(url)
+		if len(labelFilter) > 0 {
+			reqURL += "&labels=" + strings.Join(labelFilter, ",")
+		}
+
+		raw, err := c.doRequest(reqURL)
 		if err != nil {
 			return nil, err
 		}
@@ -139,7 +189,7 @@ func (c *GitHubClient) fetchAllPages(state string) ([]Issue, error) {
 			if gi.PullRequest != nil {
 				continue
 			}
-			allIssues = append(allIssues, normalizeGitHubIssue(gi, c.owner, c.repo))
+			allIssues = append(allIssues, normalizeGitHubIssue(gi, c.owner, c.repo, c.labelStates))
 		}
 
 		if len(batch) < githubDefaultPageSize {

@@ -93,7 +93,7 @@ func TestParseConfig_OverrideValues(t *testing.T) {
 func TestParseConfig_CodexAliasToGemini(t *testing.T) {
 	raw := map[string]any{
 		"codex": map[string]any{
-			"command":        "my-codex-command",
+			"command":         "my-codex-command",
 			"turn_timeout_ms": 500000,
 		},
 	}
@@ -377,5 +377,82 @@ func TestValidateDispatchConfig_ClaudeEmptyCommand(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "claude.command") {
 		t.Errorf("expected error about claude.command, got: %v", err)
+	}
+}
+
+// TestParseConfig_GitHubDefaultStates verifies that when tracker.kind is
+// "github" and active_states/terminal_states are not provided, the defaults
+// are "open" and "closed" rather than the Linear-specific defaults.
+func TestParseConfig_GitHubDefaultStates(t *testing.T) {
+	raw := map[string]any{
+		"tracker": map[string]any{
+			"kind":         "github",
+			"api_key":      "ghp_token",
+			"project_slug": "owner/repo",
+		},
+	}
+
+	cfg, err := ParseConfig(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(cfg.Tracker.ActiveStates) != 1 || cfg.Tracker.ActiveStates[0] != "open" {
+		t.Errorf("expected GitHub default active_states=[open], got %v", cfg.Tracker.ActiveStates)
+	}
+	if len(cfg.Tracker.TerminalStates) != 1 || cfg.Tracker.TerminalStates[0] != "closed" {
+		t.Errorf("expected GitHub default terminal_states=[closed], got %v", cfg.Tracker.TerminalStates)
+	}
+}
+
+// TestParseConfig_GitHubCustomStates verifies that explicitly configured
+// active_states/terminal_states are preserved for the github tracker.
+func TestParseConfig_GitHubCustomStates(t *testing.T) {
+	raw := map[string]any{
+		"tracker": map[string]any{
+			"kind":            "github",
+			"api_key":         "ghp_token",
+			"project_slug":    "owner/repo",
+			"active_states":   []any{"in-progress"},
+			"terminal_states": []any{"closed", "done"},
+		},
+	}
+
+	cfg, err := ParseConfig(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(cfg.Tracker.ActiveStates) != 1 || cfg.Tracker.ActiveStates[0] != "in-progress" {
+		t.Errorf("expected active_states=[in-progress], got %v", cfg.Tracker.ActiveStates)
+	}
+	if len(cfg.Tracker.TerminalStates) != 2 {
+		t.Errorf("expected 2 terminal states, got %v", cfg.Tracker.TerminalStates)
+	}
+}
+
+// TestParseConfig_LinearDefaultStates verifies that when tracker.kind is
+// "linear", the Linear-specific defaults are applied.
+func TestParseConfig_LinearDefaultStates(t *testing.T) {
+	raw := map[string]any{
+		"tracker": map[string]any{
+			"kind":         "linear",
+			"api_key":      "lin_token",
+			"project_slug": "my-proj",
+		},
+	}
+
+	cfg, err := ParseConfig(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	defaults := DefaultConfig()
+	if len(cfg.Tracker.ActiveStates) == 0 {
+		t.Error("expected non-empty default active_states for linear")
+	}
+	// Linear defaults should match the global defaults
+	if len(cfg.Tracker.ActiveStates) != len(defaults.Tracker.ActiveStates) {
+		t.Errorf("expected %v, got %v", defaults.Tracker.ActiveStates, cfg.Tracker.ActiveStates)
 	}
 }
