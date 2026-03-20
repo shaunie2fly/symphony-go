@@ -134,15 +134,27 @@ Symphony has two separate connections to your tracker:
      kind: github
      api_key: $GITHUB_TOKEN
      project_slug: owner/repo
-     active_states:
-       - open
-     terminal_states:
-       - closed
    ```
+
+   Symphony defaults to `active_states: [open]` and `terminal_states: [closed]` for GitHub. Specify `active_states` and `terminal_states` explicitly only if you want to change these defaults or use label-based states (see below).
 
    > **Note:** Unlike Linear and Jira, GitHub has no automatic environment variable fallback. Always set `api_key: $GITHUB_TOKEN` explicitly in your WORKFLOW.md.
 
-**Note:** GitHub Issues only has two native states — `open` and `closed`. Setting `active_states: [open]` and `terminal_states: [closed]` is recommended for clarity, though Symphony defaults to polling `open` issues when no matching state is found.
+**Label-based states:** GitHub only has two native states — `open` and `closed`. Symphony lets you use GitHub **labels** as additional states to model a richer workflow. Any state name that is not `open` or `closed` is treated as a label name:
+
+```yaml
+tracker:
+  kind: github
+  api_key: $GITHUB_TOKEN
+  project_slug: owner/repo
+  active_states:
+    - in-progress    # issues with the "in-progress" label are picked up
+  terminal_states:
+    - closed         # native GitHub closed state
+    - done           # issues with the "done" label are stopped and cleaned up
+```
+
+Symphony filters issues by the configured labels server-side (via the GitHub API `labels` parameter) and resolves each issue's effective state from its labels. Terminal label states take priority over active label states if an issue carries both.
 
 ### Tracker Configuration Reference
 
@@ -167,8 +179,8 @@ tracker:
 | `api_key` | Always | API key (Linear), API token (Jira), or personal access token (GitHub). Use `$VAR` to reference env vars. Auto-fallback: `LINEAR_API_KEY` for linear, `JIRA_API_TOKEN` for jira. GitHub has no auto-fallback — always use `api_key: $GITHUB_TOKEN` explicitly. |
 | `email` | Jira only | Atlassian account email for Basic Auth. Use `$VAR`. Falls back to `JIRA_EMAIL`. |
 | `project_slug` | Always | Linear project slug ID, Jira project key (e.g., `PROJ`), or GitHub `owner/repo` (e.g., `myorg/myrepo`). |
-| `active_states` | No | States that trigger agent work. Must match tracker exactly (case-sensitive). For GitHub: use `open`. |
-| `terminal_states` | No | States that stop agents and trigger workspace cleanup. For GitHub: use `closed`. |
+| `active_states` | No | States that trigger agent work. Must match tracker exactly (case-sensitive). Defaults: Linear/Jira: `["Todo", "In Progress"]`; GitHub: `["open"]`. For GitHub, any value other than `open`/`closed` is treated as a label name. |
+| `terminal_states` | No | States that stop agents and trigger workspace cleanup. Defaults: Linear: `["Closed", "Cancelled", "Canceled", "Duplicate", "Done"]`; Jira: `["Done"]`; GitHub: `["closed"]`. For GitHub, any value other than `open`/`closed` is treated as a label name. |
 
 **State names must match your tracker exactly** (case-sensitive). Check your Linear workflow states or Jira project board settings.
 
@@ -178,9 +190,9 @@ tracker:
 - Include all "done" statuses in `terminal_states` so Symphony cleans up finished work
 
 **GitHub Issues state tips:**
-- GitHub only has two native states: `open` and `closed`
-- Set `active_states: [open]` and `terminal_states: [closed]` for explicit configuration
-- Pull requests returned by the GitHub Issues API are automatically skipped
+- Symphony defaults to `active_states: [open]` and `terminal_states: [closed]` for GitHub. No explicit state config is needed for the standard open/closed workflow.
+- **Label-based states:** Any value other than `open`/`closed` in `active_states` or `terminal_states` is treated as a GitHub **label name**. Symphony will filter issues by those labels via the GitHub API and expose the label name as the effective state. This lets you model richer workflows (e.g., `in-progress`, `review`, `done`) using labels.
+- Pull requests returned by the GitHub Issues API are automatically skipped.
 
 ## Workflows & Customization
 
@@ -295,10 +307,12 @@ tracker:
   project_slug: my-project              # required (Linear slug, Jira project key, or owner/repo for GitHub)
   endpoint: https://api.linear.app/graphql  # default for Linear; required for Jira; not needed for GitHub
   email: $JIRA_EMAIL                    # required for Jira (Basic Auth); ignored for Linear and GitHub
-  active_states:                        # default: ["Todo", "In Progress"] (GitHub: use ["open"])
+  active_states:                        # default: ["Todo", "In Progress"] for Linear/Jira; ["open"] for GitHub
+                                        # GitHub: non-native values (not "open"/"closed") are treated as label names
     - Todo
     - In Progress
-  terminal_states:                      # default: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"] (GitHub: use ["closed"])
+  terminal_states:                      # default: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"] for Linear; ["Done"] for Jira; ["closed"] for GitHub
+                                        # GitHub: non-native values (not "open"/"closed") are treated as label names
     - Done
     - Closed
     - Cancelled
@@ -612,6 +626,7 @@ Use the Jira MCP tools for ALL Jira operations:
 ```markdown
 Use the GitHub MCP tools for ALL GitHub operations:
 - Use the GitHub MCP to update issue state (open/closed)
+- Use the GitHub MCP to add and remove labels (e.g., add "in-progress", remove "in-progress" and add "done")
 - Use the GitHub MCP to add comments to the issue
 - Use the GitHub MCP to read issue details and existing comments
 - The issue identifier is in owner/repo#number format (e.g., myorg/myrepo#42)
