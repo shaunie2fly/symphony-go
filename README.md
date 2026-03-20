@@ -2,7 +2,7 @@
 
 A Go implementation of the [Symphony specification](../SPEC.md) — a long-running automation service that reads work from issue trackers, creates isolated workspaces, and runs AI coding agents for each issue.
 
-Symphony supports two agent backends (**Gemini CLI** and **Claude Code**) and two issue trackers (**Linear** and **Jira Cloud**). Mix and match per workflow.
+Symphony supports two agent backends (**Gemini CLI** and **Claude Code**) and three issue trackers (**Linear**, **Jira Cloud**, and **GitHub Issues**). Mix and match per workflow.
 
 ## Architecture
 
@@ -49,7 +49,7 @@ This makes the Linear MCP server available in all workspaces. Alternatively, wri
 
 ## Issue Trackers
 
-Symphony supports **Linear** and **Jira Cloud** as issue trackers. Set `tracker.kind` in your WORKFLOW.md.
+Symphony supports **Linear**, **Jira Cloud**, and **GitHub Issues** as issue trackers. Set `tracker.kind` in your WORKFLOW.md.
 
 ### Why does Symphony need an API key?
 
@@ -63,15 +63,15 @@ Symphony has two separate connections to your tracker:
 
 > **Recommendation:** Set your API keys as environment variables rather than hardcoding them in WORKFLOW.md. This keeps secrets out of version control and makes it easy to share workflow files across a team.
 
-| | Linear | Jira Cloud |
-|---|---|---|
-| **Config key** | `tracker.kind: linear` | `tracker.kind: jira` |
-| **API** | GraphQL | REST API v3 |
-| **Auth** | API key | API token + email |
-| **Project filter** | `tracker.project_slug` (slug ID from URL) | `tracker.project_slug` (Jira project key, e.g., `PROJ`) |
-| **Endpoint** | Default: `https://api.linear.app/graphql` | Required (e.g., `https://mycompany.atlassian.net`) |
-| **Default active states** | `To Do`, `In Progress` | `To Do`, `In Progress` |
-| **Default terminal states** | `Closed`, `Cancelled`, `Canceled`, `Duplicate`, `Done` | `Done` |
+| | Linear | Jira Cloud | GitHub Issues |
+|---|---|---|---|
+| **Config key** | `tracker.kind: linear` | `tracker.kind: jira` | `tracker.kind: github` |
+| **API** | GraphQL | REST API v3 | REST API v3 |
+| **Auth** | API key | API token + email | Personal access token |
+| **Project filter** | `tracker.project_slug` (slug ID from URL) | `tracker.project_slug` (Jira project key, e.g., `PROJ`) | `tracker.project_slug` (in `owner/repo` format) |
+| **Endpoint** | Default: `https://api.linear.app/graphql` | Required (e.g., `https://mycompany.atlassian.net`) | Default: `https://api.github.com` |
+| **Default active states** | `To Do`, `In Progress` | `To Do`, `In Progress` | `open` |
+| **Default terminal states** | `Closed`, `Cancelled`, `Canceled`, `Duplicate`, `Done` | `Done` | `closed` |
 
 ### Linear Setup
 
@@ -115,15 +115,44 @@ Symphony has two separate connections to your tracker:
      project_slug: PROJ
    ```
 
+### GitHub Issues Setup
+
+1. Create a personal access token at **GitHub Settings > Developer settings > Personal access tokens**
+   - Classic token: select the `repo` scope (or `public_repo` for public repositories only)
+   - Fine-grained token: grant **Issues: Read and write** permission for the target repository
+2. Set the environment variable (add to your `~/.zshrc` or `~/.bashrc` to persist):
+   ```bash
+   export GITHUB_TOKEN="ghp_..."
+   ```
+3. Optionally, add a GitHub MCP server so the agent can interact with issues during work:
+   - Install the [GitHub MCP Server](https://github.com/github/github-mcp-server) and configure it for your agent backend
+   - **Claude Code:** `claude mcp add -s user github -- github-mcp-server stdio`
+   - **Gemini:** configure the GitHub MCP server in `~/.gemini/settings.json`
+4. In your WORKFLOW.md, reference the env var:
+   ```yaml
+   tracker:
+     kind: github
+     api_key: $GITHUB_TOKEN
+     project_slug: owner/repo
+     active_states:
+       - open
+     terminal_states:
+       - closed
+   ```
+
+   > **Note:** Unlike Linear and Jira, GitHub has no automatic environment variable fallback. Always set `api_key: $GITHUB_TOKEN` explicitly in your WORKFLOW.md.
+
+**Note:** GitHub Issues only has two native states — `open` and `closed`. Setting `active_states: [open]` and `terminal_states: [closed]` is recommended for clarity, though Symphony defaults to polling `open` issues when no matching state is found.
+
 ### Tracker Configuration Reference
 
 ```yaml
 tracker:
-  kind: jira                        # required: "linear" or "jira"
-  endpoint: $JIRA_ENDPOINT          # required for Jira; has default for Linear
+  kind: jira                        # required: "linear", "jira", or "github"
+  endpoint: $JIRA_ENDPOINT          # required for Jira; has default for Linear and GitHub
   api_key: $JIRA_API_TOKEN          # required: API key/token (supports $VAR)
   email: $JIRA_EMAIL                # required for Jira only (supports $VAR)
-  project_slug: PROJ                # required: Linear slug ID or Jira project key
+  project_slug: PROJ                # required: Linear slug ID, Jira project key, or owner/repo for GitHub
   active_states:                    # states that trigger agent work
     - To Do
     - In Progress
@@ -133,13 +162,13 @@ tracker:
 
 | Field | Required | Description |
 |---|---|---|
-| `kind` | Always | `"linear"` or `"jira"` |
-| `endpoint` | Jira only | Jira Cloud base URL. Linear has a built-in default. |
-| `api_key` | Always | API key (Linear) or API token (Jira). Use `$VAR` to reference env vars. Falls back to `LINEAR_API_KEY` or `JIRA_API_TOKEN` env vars. |
+| `kind` | Always | `"linear"`, `"jira"`, or `"github"` |
+| `endpoint` | Jira only | Jira Cloud base URL. Linear and GitHub have built-in defaults. |
+| `api_key` | Always | API key (Linear), API token (Jira), or personal access token (GitHub). Use `$VAR` to reference env vars. Auto-fallback: `LINEAR_API_KEY` for linear, `JIRA_API_TOKEN` for jira. GitHub has no auto-fallback — always use `api_key: $GITHUB_TOKEN` explicitly. |
 | `email` | Jira only | Atlassian account email for Basic Auth. Use `$VAR`. Falls back to `JIRA_EMAIL`. |
-| `project_slug` | Always | Linear project slug ID or Jira project key (e.g., `PROJ`). |
-| `active_states` | No | States that trigger agent work. Must match tracker exactly (case-sensitive). |
-| `terminal_states` | No | States that stop agents and trigger workspace cleanup. |
+| `project_slug` | Always | Linear project slug ID, Jira project key (e.g., `PROJ`), or GitHub `owner/repo` (e.g., `myorg/myrepo`). |
+| `active_states` | No | States that trigger agent work. Must match tracker exactly (case-sensitive). For GitHub: use `open`. |
+| `terminal_states` | No | States that stop agents and trigger workspace cleanup. For GitHub: use `closed`. |
 
 **State names must match your tracker exactly** (case-sensitive). Check your Linear workflow states or Jira project board settings.
 
@@ -147,6 +176,11 @@ tracker:
 - Jira status names often include spaces: `"To Do"`, `"In Progress"`, `"In Review"`
 - Custom workflows may have different names — check your project's board columns
 - Include all "done" statuses in `terminal_states` so Symphony cleans up finished work
+
+**GitHub Issues state tips:**
+- GitHub only has two native states: `open` and `closed`
+- Set `active_states: [open]` and `terminal_states: [closed]` for explicit configuration
+- Pull requests returned by the GitHub Issues API are automatically skipped
 
 ## Workflows & Customization
 
@@ -197,6 +231,7 @@ To use a custom workflow:
 3. **An issue tracker** — at least one of:
    - **Linear** — API key from Linear settings. Project slug from URL: `my-project-abc123`
    - **Jira Cloud** — API token + email. Project key (e.g., `PROJ`)
+   - **GitHub Issues** — Personal access token with `repo` scope. Repository in `owner/repo` format.
 
 4. **Tracker MCP** (for agent access to the tracker) — see [Issue Trackers](#issue-trackers) for setup
 
@@ -256,14 +291,14 @@ You are working on issue {{ issue.identifier }}: {{ issue.title }}.
 backend: gemini                           # "gemini" (default) or "claude"
 
 tracker:
-  kind: linear                          # required: "linear" or "jira"
-  project_slug: my-project              # required (Linear slug or Jira project key)
-  endpoint: https://api.linear.app/graphql  # default for Linear; required for Jira
-  email: $JIRA_EMAIL                    # required for Jira (Basic Auth); ignored for Linear
-  active_states:                        # default: ["Todo", "In Progress"]
+  kind: linear                          # required: "linear", "jira", or "github"
+  project_slug: my-project              # required (Linear slug, Jira project key, or owner/repo for GitHub)
+  endpoint: https://api.linear.app/graphql  # default for Linear; required for Jira; not needed for GitHub
+  email: $JIRA_EMAIL                    # required for Jira (Basic Auth); ignored for Linear and GitHub
+  active_states:                        # default: ["Todo", "In Progress"] (GitHub: use ["open"])
     - Todo
     - In Progress
-  terminal_states:                      # default: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"]
+  terminal_states:                      # default: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"] (GitHub: use ["closed"])
     - Done
     - Closed
     - Cancelled
@@ -382,9 +417,12 @@ export LINEAR_API_KEY="lin_api_..."
 export JIRA_API_TOKEN="your-token"
 export JIRA_EMAIL="you@company.com"
 export JIRA_ENDPOINT="https://mycompany.atlassian.net"
+
+# GitHub
+export GITHUB_TOKEN="ghp_..."
 ```
 
-Then reference them in WORKFLOW.md with `$VAR` syntax: `api_key: $LINEAR_API_KEY`. Or omit the field entirely and let the auto-fallback pick up the env var.
+Then reference them in WORKFLOW.md with `$VAR` syntax: `api_key: $GITHUB_TOKEN`. For Linear and Jira, you can omit the field entirely and let the auto-fallback pick up the env var. For GitHub, always reference the token explicitly with `api_key: $GITHUB_TOKEN`.
 
 ## Run
 
@@ -570,7 +608,16 @@ Use the Jira MCP tools for ALL Jira operations:
 - Use the Jira MCP to read issue details and existing comments
 ```
 
-The template variables (`{{ issue.identifier }}`, `{{ issue.title }}`, etc.) work identically for both trackers — Symphony normalizes the data before rendering.
+**GitHub Issues workflows:**
+```markdown
+Use the GitHub MCP tools for ALL GitHub operations:
+- Use the GitHub MCP to update issue state (open/closed)
+- Use the GitHub MCP to add comments to the issue
+- Use the GitHub MCP to read issue details and existing comments
+- The issue identifier is in owner/repo#number format (e.g., myorg/myrepo#42)
+```
+
+The template variables (`{{ issue.identifier }}`, `{{ issue.title }}`, etc.) work identically for all trackers — Symphony normalizes the data before rendering. For GitHub Issues, `{{ issue.identifier }}` produces the `owner/repo#number` format (e.g., `myorg/myrepo#42`).
 
 ### Example: Full workflow prompt
 
@@ -640,7 +687,7 @@ make run
 ├── internal/
 │   ├── config/                   # Typed config + defaults + validation
 │   ├── workflow/                 # WORKFLOW.md parser + file watcher
-│   ├── tracker/                  # Issue tracker clients (Linear + Jira)
+│   ├── tracker/                  # Issue tracker clients (Linear, Jira, GitHub Issues)
 │   ├── orchestrator/             # Poll loop, dispatch, reconcile, retry
 │   ├── workspace/                # Directory lifecycle + hooks + safety
 │   ├── agent/                    # Backend runners + protocol clients
