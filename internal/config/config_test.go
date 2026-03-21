@@ -456,3 +456,130 @@ func TestParseConfig_LinearDefaultStates(t *testing.T) {
 		t.Errorf("expected %v, got %v", defaults.Tracker.ActiveStates, cfg.Tracker.ActiveStates)
 	}
 }
+
+func TestParseConfig_MiniAgentDefaults(t *testing.T) {
+	cfg, err := ParseConfig(map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defaults := DefaultConfig()
+
+	if cfg.MiniAgent.Command != defaults.MiniAgent.Command {
+		t.Errorf("expected default mini_agent command %q, got %q", defaults.MiniAgent.Command, cfg.MiniAgent.Command)
+	}
+	if cfg.MiniAgent.Model != defaults.MiniAgent.Model {
+		t.Errorf("expected default mini_agent model %q, got %q", defaults.MiniAgent.Model, cfg.MiniAgent.Model)
+	}
+	if cfg.MiniAgent.APIBase != defaults.MiniAgent.APIBase {
+		t.Errorf("expected default mini_agent api_base %q, got %q", defaults.MiniAgent.APIBase, cfg.MiniAgent.APIBase)
+	}
+	if cfg.MiniAgent.TurnTimeoutMs != defaults.MiniAgent.TurnTimeoutMs {
+		t.Errorf("expected default turn_timeout_ms %d, got %d", defaults.MiniAgent.TurnTimeoutMs, cfg.MiniAgent.TurnTimeoutMs)
+	}
+	if cfg.MiniAgent.ReadTimeoutMs != defaults.MiniAgent.ReadTimeoutMs {
+		t.Errorf("expected default read_timeout_ms %d, got %d", defaults.MiniAgent.ReadTimeoutMs, cfg.MiniAgent.ReadTimeoutMs)
+	}
+	if cfg.MiniAgent.StallTimeoutMs != defaults.MiniAgent.StallTimeoutMs {
+		t.Errorf("expected default stall_timeout_ms %d, got %d", defaults.MiniAgent.StallTimeoutMs, cfg.MiniAgent.StallTimeoutMs)
+	}
+}
+
+func TestParseConfig_MiniAgentOverrides(t *testing.T) {
+	raw := map[string]any{
+		"backend": "mini_agent",
+		"mini_agent": map[string]any{
+			"command":         "mini-agent-acp",
+			"model":           "MiniMax-M3",
+			"api_key":         "$MINIMAX_API_KEY",
+			"api_base":        "https://api.minimaxi.com",
+			"turn_timeout_ms": 1800000,
+			"read_timeout_ms": 10000,
+		},
+	}
+
+	cfg, err := ParseConfig(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Backend != "mini_agent" {
+		t.Errorf("expected backend=mini_agent, got %q", cfg.Backend)
+	}
+	if cfg.MiniAgent.Command != "mini-agent-acp" {
+		t.Errorf("expected command %q, got %q", "mini-agent-acp", cfg.MiniAgent.Command)
+	}
+	if cfg.MiniAgent.Model != "MiniMax-M3" {
+		t.Errorf("expected model %q, got %q", "MiniMax-M3", cfg.MiniAgent.Model)
+	}
+	if cfg.MiniAgent.APIKey != "$MINIMAX_API_KEY" {
+		t.Errorf("expected api_key %q, got %q", "$MINIMAX_API_KEY", cfg.MiniAgent.APIKey)
+	}
+	if cfg.MiniAgent.APIBase != "https://api.minimaxi.com" {
+		t.Errorf("expected api_base %q, got %q", "https://api.minimaxi.com", cfg.MiniAgent.APIBase)
+	}
+	if cfg.MiniAgent.TurnTimeoutMs != 1800000 {
+		t.Errorf("expected turn_timeout_ms=1800000, got %d", cfg.MiniAgent.TurnTimeoutMs)
+	}
+	if cfg.MiniAgent.ReadTimeoutMs != 10000 {
+		t.Errorf("expected read_timeout_ms=10000, got %d", cfg.MiniAgent.ReadTimeoutMs)
+	}
+	// Unset field should retain default
+	defaults := DefaultConfig()
+	if cfg.MiniAgent.StallTimeoutMs != defaults.MiniAgent.StallTimeoutMs {
+		t.Errorf("expected default stall_timeout_ms preserved, got %d", cfg.MiniAgent.StallTimeoutMs)
+	}
+}
+
+func TestParseConfig_MiniMaxAgentAlias(t *testing.T) {
+	raw := map[string]any{
+		"minimax_agent": map[string]any{
+			"command": "minimax-agent-acp",
+			"model":   "MiniMax-M2.5",
+		},
+	}
+
+	cfg, err := ParseConfig(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.MiniAgent.Command != "minimax-agent-acp" {
+		t.Errorf("expected minimax_agent alias to mini_agent.command, got %q", cfg.MiniAgent.Command)
+	}
+	if cfg.MiniAgent.Model != "MiniMax-M2.5" {
+		t.Errorf("expected minimax_agent alias to mini_agent.model, got %q", cfg.MiniAgent.Model)
+	}
+}
+
+func TestParseConfig_MiniAgentTakesPrecedenceOverMiniMaxAgent(t *testing.T) {
+	raw := map[string]any{
+		"minimax_agent": map[string]any{
+			"command": "minimax-agent-acp",
+		},
+		"mini_agent": map[string]any{
+			"command": "mini-agent-acp",
+		},
+	}
+
+	cfg, err := ParseConfig(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.MiniAgent.Command != "mini-agent-acp" {
+		t.Errorf("expected mini_agent to take precedence over minimax_agent, got %q", cfg.MiniAgent.Command)
+	}
+}
+
+func TestParseConfig_BackendMiniAgent(t *testing.T) {
+	raw := map[string]any{
+		"backend": "mini_agent",
+	}
+	cfg, err := ParseConfig(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Backend != "mini_agent" {
+		t.Errorf("expected backend %q, got %q", "mini_agent", cfg.Backend)
+	}
+}

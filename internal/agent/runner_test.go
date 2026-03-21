@@ -447,6 +447,26 @@ func TestNewLauncher_Claude(t *testing.T) {
 	}
 }
 
+func TestNewLauncher_MiniAgent(t *testing.T) {
+	launcher, err := NewLauncher("mini_agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := launcher.(*MiniAgentRunner); !ok {
+		t.Errorf("expected *MiniAgentRunner, got %T", launcher)
+	}
+}
+
+func TestNewLauncher_MiniAgentAlias(t *testing.T) {
+	launcher, err := NewLauncher("mini-agent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := launcher.(*MiniAgentRunner); !ok {
+		t.Errorf("expected *MiniAgentRunner for mini-agent alias, got %T", launcher)
+	}
+}
+
 func TestNewLauncher_Empty(t *testing.T) {
 	launcher, err := NewLauncher("")
 	if err != nil {
