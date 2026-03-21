@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/symphony-go/symphony/internal/agent"
@@ -42,7 +43,7 @@ func setupTestServer(t *testing.T) (*Server, string) {
 	if err := srv.Start(); err != nil {
 		t.Fatalf("failed to start test server: %v", err)
 	}
-	t.Cleanup(func() { srv.Shutdown(nil) })
+	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	baseURL := "http://127.0.0.1:" + itoa(srv.Port())
 	return srv, baseURL
@@ -162,4 +163,58 @@ func TestDashboard_ReturnsHTML(t *testing.T) {
 	if ct != "text/html; charset=utf-8" {
 		t.Errorf("expected text/html, got %q", ct)
 	}
+}
+
+func TestAgentCallback_Returns200(t *testing.T) {
+_, baseURL := setupTestServer(t)
+
+body := strings.NewReader(`{"status":"completed","message":"Finished the task"}`)
+resp, err := http.Post(baseURL+"/api/internal/agent/callback", "application/json", body)
+if err != nil {
+t.Fatalf("request failed: %v", err)
+}
+defer resp.Body.Close()
+
+if resp.StatusCode != http.StatusOK {
+t.Errorf("expected 200, got %d", resp.StatusCode)
+}
+
+var result map[string]any
+json.NewDecoder(resp.Body).Decode(&result)
+if result["acknowledged"] != true {
+t.Error("expected acknowledged=true")
+}
+if result["status"] != "completed" {
+t.Errorf("expected status=completed, got %v", result["status"])
+}
+}
+
+func TestAgentCallback_MissingStatus_Returns400(t *testing.T) {
+_, baseURL := setupTestServer(t)
+
+body := strings.NewReader(`{"message":"no status"}`)
+resp, err := http.Post(baseURL+"/api/internal/agent/callback", "application/json", body)
+if err != nil {
+t.Fatalf("request failed: %v", err)
+}
+defer resp.Body.Close()
+
+if resp.StatusCode != http.StatusBadRequest {
+t.Errorf("expected 400, got %d", resp.StatusCode)
+}
+}
+
+func TestAgentCallback_InvalidJSON_Returns400(t *testing.T) {
+_, baseURL := setupTestServer(t)
+
+body := strings.NewReader(`not-json`)
+resp, err := http.Post(baseURL+"/api/internal/agent/callback", "application/json", body)
+if err != nil {
+t.Fatalf("request failed: %v", err)
+}
+defer resp.Body.Close()
+
+if resp.StatusCode != http.StatusBadRequest {
+t.Errorf("expected 400, got %d", resp.StatusCode)
+}
 }

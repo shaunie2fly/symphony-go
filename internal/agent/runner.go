@@ -39,12 +39,14 @@ type RunParams struct {
 	Workflow        *workflow.WorkflowDefinition
 	GeminiCfg       *config.GeminiConfig
 	ClaudeCfg       *config.ClaudeConfig
+	MiniAgentCfg    *config.MiniAgentConfig
 	AgentCfg        *config.AgentConfig
 	ActiveStates    []string
 	WorkspaceMgr    *workspace.Manager
 	WorkspaceRoot   string
 	ExtraEnv        []string  // additional env vars for the agent subprocess
 	EventLogWriter  io.Writer // if non-nil, raw protocol events are written here
+	CallbackURL     string    // base URL of the Symphony HTTP server for agent callbacks
 	CheckIssueState func(ctx context.Context, issueID string) (string, error)
 }
 
@@ -68,6 +70,8 @@ func NewLauncher(backend string) (AgentLauncher, error) {
 		return NewGeminiRunner(), nil
 	case "claude":
 		return NewClaudeRunner(), nil
+	case "mini_agent", "mini-agent":
+		return NewMiniAgentRunner(), nil
 	default:
 		return nil, fmt.Errorf("unsupported backend: %q", backend)
 	}

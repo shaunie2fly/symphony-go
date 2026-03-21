@@ -196,3 +196,37 @@ func TestValidateDispatchConfig_GitHubMissingAPIKey(t *testing.T) {
 		t.Errorf("expected error about api_key, got: %v", err)
 	}
 }
+
+func TestValidateDispatchConfig_MiniAgentBackend(t *testing.T) {
+cfg := validConfig()
+cfg.Backend = "mini_agent"
+cfg.MiniAgent.Command = "mini-agent-acp"
+
+if err := ValidateDispatchConfig(cfg); err != nil {
+t.Errorf("expected no error for valid mini_agent config, got %v", err)
+}
+}
+
+func TestValidateDispatchConfig_MiniAgentBackendAlias(t *testing.T) {
+cfg := validConfig()
+cfg.Backend = "mini-agent"
+cfg.MiniAgent.Command = "mini-agent-acp"
+
+if err := ValidateDispatchConfig(cfg); err != nil {
+t.Errorf("expected no error for mini-agent alias, got %v", err)
+}
+}
+
+func TestValidateDispatchConfig_MiniAgentMissingCommand(t *testing.T) {
+cfg := validConfig()
+cfg.Backend = "mini_agent"
+cfg.MiniAgent.Command = ""
+
+err := ValidateDispatchConfig(cfg)
+if err == nil {
+t.Fatal("expected error for missing mini_agent.command")
+}
+if !strings.Contains(err.Error(), "mini_agent.command") {
+t.Errorf("expected error about mini_agent.command, got: %v", err)
+}
+}

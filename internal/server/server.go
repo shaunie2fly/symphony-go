@@ -34,6 +34,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("GET /api/v1/state", s.handleGetState)
 	mux.HandleFunc("GET /api/v1/{identifier}", s.handleGetIssue)
 	mux.HandleFunc("POST /api/v1/refresh", s.handlePostRefresh)
+	mux.HandleFunc("POST /api/internal/agent/callback", s.handleAgentCallback)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", s.port)
 	listener, err := net.Listen("tcp", addr)

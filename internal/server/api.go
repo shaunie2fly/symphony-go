@@ -83,6 +83,38 @@ func (s *Server) handlePostRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleAgentCallback receives lifecycle callbacks from Mini-Agent's
+// SymphonyStatusUpdateTool. The agent POSTs {"status":"completed"|"failed"|"blocked",
+// "message":"..."} here when it finishes (or is blocked), then exits.
+// Symphony logs the event and triggers an immediate reconcile tick.
+func (s *Server) handleAgentCallback(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "request body must be JSON with status and message fields")
+		return
+	}
+	if payload.Status == "" {
+		writeError(w, http.StatusBadRequest, "missing_status", "status field is required")
+		return
+	}
+
+	// Trigger a reconcile so the orchestrator re-checks issue states immediately
+	// rather than waiting for the next poll interval.
+	select {
+	case s.orch.RefreshCh() <- struct{}{}:
+	default:
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"acknowledged": true,
+		"status":       payload.Status,
+		"received_at":  time.Now().UTC(),
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

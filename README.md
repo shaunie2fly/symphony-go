@@ -2,7 +2,7 @@
 
 A Go implementation of the [Symphony specification](../SPEC.md) — a long-running automation service that reads work from issue trackers, creates isolated workspaces, and runs AI coding agents for each issue.
 
-Symphony supports two agent backends (**Gemini CLI** and **Claude Code**) and three issue trackers (**Linear**, **Jira Cloud**, and **GitHub Issues**). Mix and match per workflow.
+Symphony supports three agent backends (**Gemini CLI**, **Claude Code**, and **Mini-Agent**) and three issue trackers (**Linear**, **Jira Cloud**, and **GitHub Issues**). Mix and match per workflow.
 
 ## Architecture
 
@@ -10,17 +10,17 @@ Symphony supports two agent backends (**Gemini CLI** and **Claude Code**) and th
 
 ## Agent Backends
 
-Symphony supports two agent backends. Set the `backend` field in your WORKFLOW.md to choose:
+Symphony supports three agent backends. Set the `backend` field in your WORKFLOW.md to choose:
 
-| | Gemini CLI | Claude Code |
-|---|---|---|
-| **Config key** | `backend: gemini` (default) | `backend: claude` |
-| **Protocol** | ACP — JSON-RPC 2.0 over stdio (long-running process) | NDJSON stream — one CLI invocation per turn |
-| **Session model** | Single process, session persists in-memory | `--resume <session_id>` across invocations, persisted to `.symphony-session-id` |
-| **Tool access** | Client-side injection (ACP fs/terminal requests) | MCP servers (configured externally via `.mcp.json` or user config) |
-| **Permission handling** | ACP `session/request_permission` auto-approve | `--permission-mode bypassPermissions` flag |
-| **Default model** | `gemini-3.1-pro-preview` | `claude-sonnet-4-6` |
-| **TTY requirement** | None | Requires pseudo-TTY (`script -q /dev/null` wrapper, handled automatically) |
+| | Gemini CLI | Claude Code | Mini-Agent |
+|---|---|---|---|
+| **Config key** | `backend: gemini` (default) | `backend: claude` | `backend: mini_agent` |
+| **Protocol** | ACP — JSON-RPC 2.0 over stdio (long-running process) | NDJSON stream — one CLI invocation per turn | ACP — JSON-RPC 2.0 over stdio (long-running process) |
+| **Session model** | Single process, session persists in-memory | `--resume <session_id>` across invocations, persisted to `.symphony-session-id` | Single process, session persists in-memory |
+| **Tool access** | Client-side injection (ACP fs/terminal requests) | MCP servers (configured externally via `.mcp.json` or user config) | Built-in tools (bash, file ops, MCP); no client-side injection needed |
+| **Permission handling** | ACP `session/request_permission` auto-approve | `--permission-mode bypassPermissions` flag | Autonomous — no permission prompts |
+| **Default model** | `gemini-3.1-pro-preview` | `claude-sonnet-4-6` | `MiniMax-M2.5` |
+| **TTY requirement** | None | Requires pseudo-TTY (`script -q /dev/null` wrapper, handled automatically) | None |
 
 ### Gemini CLI Setup
 
@@ -46,6 +46,32 @@ claude mcp add -s user --transport http linear-server https://mcp.linear.app/mcp
 ```
 
 This makes the Linear MCP server available in all workspaces. Alternatively, write a `.mcp.json` file in the workspace via the `after_create` hook for a self-contained setup.
+
+### Mini-Agent Setup
+
+```bash
+# Install via uv
+uv tool install git+https://github.com/shaunie2fly/Mini-Agent.git
+```
+
+This installs the `mini-agent-acp` command (used by Symphony in ACP mode) and `mini-agent` (interactive CLI).
+
+Get a MiniMax API key at [https://platform.minimax.io](https://platform.minimax.io) and set it:
+```bash
+export MINIMAX_API_KEY="your-key-here"
+```
+
+Set `api_key: $MINIMAX_API_KEY` in your WORKFLOW.md (see configuration below) and Symphony will write the credential into the workspace automatically. Alternatively, configure it globally:
+```bash
+mkdir -p ~/.mini-agent/config
+cat > ~/.mini-agent/config/config.yaml <<EOF
+api_key: "your-key-here"
+api_base: "https://api.minimax.io"
+model: "MiniMax-M2.5"
+EOF
+```
+
+> See [symphony_agent_integration.md](./symphony_agent_integration.md) for the full Mini-Agent integration guide.
 
 ## Issue Trackers
 

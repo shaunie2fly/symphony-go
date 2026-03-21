@@ -63,6 +63,10 @@ func ValidateDispatchConfig(cfg *Config) error {
 		if cfg.Claude.Command == "" {
 			errs = append(errs, "claude.command is required when backend is \"claude\"")
 		}
+	case "mini_agent", "mini-agent":
+		if cfg.MiniAgent.Command == "" {
+			errs = append(errs, "mini_agent.command is required when backend is \"mini_agent\"")
+		}
 	default:
 		errs = append(errs, fmt.Sprintf("unsupported backend: %q", cfg.Backend))
 	}
