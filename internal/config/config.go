@@ -9,16 +9,17 @@ import (
 
 // Config is the typed service configuration derived from WORKFLOW.md front matter.
 type Config struct {
-	Backend   string          `yaml:"backend"   json:"backend"`
-	Tracker   TrackerConfig   `yaml:"tracker"   json:"tracker"`
-	Polling   PollingConfig   `yaml:"polling"   json:"polling"`
-	Workspace WorkspaceConfig `yaml:"workspace" json:"workspace"`
-	Hooks     HooksConfig     `yaml:"hooks"     json:"hooks"`
-	Agent     AgentConfig     `yaml:"agent"     json:"agent"`
-	Gemini    GeminiConfig    `yaml:"gemini"    json:"gemini"`
-	Claude    ClaudeConfig    `yaml:"claude"    json:"claude"`
-	Server    ServerConfig    `yaml:"server"    json:"server"`
-	Cmux      CmuxConfig      `yaml:"cmux"      json:"cmux"`
+	Backend   string           `yaml:"backend"    json:"backend"`
+	Tracker   TrackerConfig    `yaml:"tracker"    json:"tracker"`
+	Polling   PollingConfig    `yaml:"polling"    json:"polling"`
+	Workspace WorkspaceConfig  `yaml:"workspace"  json:"workspace"`
+	Hooks     HooksConfig      `yaml:"hooks"      json:"hooks"`
+	Agent     AgentConfig      `yaml:"agent"      json:"agent"`
+	Gemini    GeminiConfig     `yaml:"gemini"     json:"gemini"`
+	Claude    ClaudeConfig     `yaml:"claude"     json:"claude"`
+	MiniAgent MiniAgentConfig  `yaml:"mini_agent" json:"mini_agent"`
+	Server    ServerConfig     `yaml:"server"     json:"server"`
+	Cmux      CmuxConfig       `yaml:"cmux"       json:"cmux"`
 }
 
 type TrackerConfig struct {
@@ -72,6 +73,19 @@ type ClaudeConfig struct {
 	StallTimeoutMs int      `yaml:"stall_timeout_ms" json:"stall_timeout_ms"`
 }
 
+// MiniAgentConfig holds configuration for the Mini-Agent (mini-agent-acp) backend.
+// Mini-Agent is an ACP-compatible agent powered by the MiniMax M2.5 model.
+// See: https://github.com/MiniMax-AI/Mini-Agent
+type MiniAgentConfig struct {
+	Command        string `yaml:"command"          json:"command"`
+	Model          string `yaml:"model"            json:"model"`
+	APIKey         string `yaml:"api_key"          json:"api_key"`
+	APIBase        string `yaml:"api_base"         json:"api_base"`
+	TurnTimeoutMs  int    `yaml:"turn_timeout_ms"  json:"turn_timeout_ms"`
+	ReadTimeoutMs  int    `yaml:"read_timeout_ms"  json:"read_timeout_ms"`
+	StallTimeoutMs int    `yaml:"stall_timeout_ms" json:"stall_timeout_ms"`
+}
+
 type ServerConfig struct {
 	Port *int `yaml:"port" json:"port"`
 }
@@ -104,6 +118,14 @@ func ParseConfig(raw map[string]any) (*Config, error) {
 		if claudeCodeVal, hasClaudeCode := raw["claude_code"]; hasClaudeCode {
 			raw["claude"] = claudeCodeVal
 			delete(raw, "claude_code")
+		}
+	}
+
+	// Alias: if raw has "minimax_agent" but not "mini_agent", rename it
+	if _, hasMiniAgent := raw["mini_agent"]; !hasMiniAgent {
+		if minimaxAgentVal, hasMiniMaxAgent := raw["minimax_agent"]; hasMiniMaxAgent {
+			raw["mini_agent"] = minimaxAgentVal
+			delete(raw, "minimax_agent")
 		}
 	}
 
@@ -243,6 +265,33 @@ func applyDefaults(cfg *Config, defaults *Config, raw map[string]any) {
 		}
 		if _, ok := claudeRaw["stall_timeout_ms"]; !ok {
 			cfg.Claude.StallTimeoutMs = defaults.Claude.StallTimeoutMs
+		}
+	}
+
+	miniAgentRaw, _ := raw["mini_agent"].(map[string]any)
+	if miniAgentRaw == nil {
+		cfg.MiniAgent = defaults.MiniAgent
+	} else {
+		if _, ok := miniAgentRaw["command"]; !ok {
+			cfg.MiniAgent.Command = defaults.MiniAgent.Command
+		}
+		if _, ok := miniAgentRaw["model"]; !ok {
+			cfg.MiniAgent.Model = defaults.MiniAgent.Model
+		}
+		if _, ok := miniAgentRaw["api_key"]; !ok {
+			cfg.MiniAgent.APIKey = defaults.MiniAgent.APIKey
+		}
+		if _, ok := miniAgentRaw["api_base"]; !ok {
+			cfg.MiniAgent.APIBase = defaults.MiniAgent.APIBase
+		}
+		if _, ok := miniAgentRaw["turn_timeout_ms"]; !ok {
+			cfg.MiniAgent.TurnTimeoutMs = defaults.MiniAgent.TurnTimeoutMs
+		}
+		if _, ok := miniAgentRaw["read_timeout_ms"]; !ok {
+			cfg.MiniAgent.ReadTimeoutMs = defaults.MiniAgent.ReadTimeoutMs
+		}
+		if _, ok := miniAgentRaw["stall_timeout_ms"]; !ok {
+			cfg.MiniAgent.StallTimeoutMs = defaults.MiniAgent.StallTimeoutMs
 		}
 	}
 

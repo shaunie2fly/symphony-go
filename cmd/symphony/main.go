@@ -148,6 +148,9 @@ func main() {
 	if resolved.Backend == "claude" {
 		agentModel = resolved.Claude.Model
 		agentCommand = resolved.Claude.Command
+	} else if resolved.Backend == "mini_agent" || resolved.Backend == "mini-agent" {
+		agentModel = resolved.MiniAgent.Model
+		agentCommand = resolved.MiniAgent.Command
 	}
 
 	slog.Info("symphony-go starting",

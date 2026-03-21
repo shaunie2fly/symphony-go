@@ -55,6 +55,10 @@ func New(
 		state.AgentModel = cfg.Claude.Model
 		state.AgentCommand = cfg.Claude.Command
 		state.BackendKind = "claude"
+	} else if cfg.Backend == "mini_agent" || cfg.Backend == "mini-agent" {
+		state.AgentModel = cfg.MiniAgent.Model
+		state.AgentCommand = cfg.MiniAgent.Command
+		state.BackendKind = "mini_agent"
 	} else {
 		state.AgentModel = cfg.Gemini.Model
 		state.AgentCommand = cfg.Gemini.Command
@@ -223,7 +227,15 @@ func (o *Orchestrator) dispatchIssue(ctx context.Context, issue *tracker.Issue, 
 	wf := o.getWorkflow()
 	geminiCfg := cfg.Gemini
 	claudeCfg := cfg.Claude
+	miniAgentCfg := cfg.MiniAgent
 	agentCfg := cfg.Agent
+
+	// Build the callback URL for agent lifecycle callbacks (e.g. Mini-Agent's
+	// SymphonyStatusUpdateTool). Use the configured server port when available.
+	callbackURL := "http://localhost:8080/api/internal/agent/callback"
+	if cfg.Server.Port != nil && *cfg.Server.Port > 0 {
+		callbackURL = fmt.Sprintf("http://localhost:%d/api/internal/agent/callback", *cfg.Server.Port)
+	}
 
 	// Create cmux surface for visibility
 	wsPath := filepath.Join(cfg.Workspace.Root, issue.Identifier)
@@ -244,12 +256,14 @@ func (o *Orchestrator) dispatchIssue(ctx context.Context, issue *tracker.Issue, 
 			Workflow:      wf,
 			GeminiCfg:     &geminiCfg,
 			ClaudeCfg:     &claudeCfg,
+			MiniAgentCfg:  &miniAgentCfg,
 			AgentCfg:      &agentCfg,
 			ActiveStates:  cfg.Tracker.ActiveStates,
 			WorkspaceMgr:  o.workspaceMgr,
 			WorkspaceRoot:  cfg.Workspace.Root,
 			ExtraEnv:       []string{},
 			EventLogWriter: o.cmuxMgr.LogWriter(issue.ID),
+			CallbackURL:    callbackURL,
 			CheckIssueState: func(ctx context.Context, issueID string) (string, error) {
 				issues, err := o.tracker.FetchIssueStatesByIDs([]string{issueID})
 				if err != nil {
@@ -434,6 +448,9 @@ func (o *Orchestrator) applyReload(reload ReloadPayload, ticker *time.Ticker) {
 	if reload.Config.Backend == "claude" {
 		o.state.AgentModel = reload.Config.Claude.Model
 		o.state.AgentCommand = reload.Config.Claude.Command
+	} else if reload.Config.Backend == "mini_agent" || reload.Config.Backend == "mini-agent" {
+		o.state.AgentModel = reload.Config.MiniAgent.Model
+		o.state.AgentCommand = reload.Config.MiniAgent.Command
 	} else {
 		o.state.AgentModel = reload.Config.Gemini.Model
 		o.state.AgentCommand = reload.Config.Gemini.Command

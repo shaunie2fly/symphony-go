@@ -45,6 +45,14 @@ func DefaultConfig() Config {
 			TurnTimeoutMs:  600000,
 			StallTimeoutMs: 300000,
 		},
+		MiniAgent: MiniAgentConfig{
+			Command:        "mini-agent-acp",
+			Model:          "MiniMax-M2.5",
+			APIBase:        "https://api.minimax.io",
+			TurnTimeoutMs:  3600000,
+			ReadTimeoutMs:  5000,
+			StallTimeoutMs: 300000,
+		},
 		Cmux: CmuxConfig{
 			Enabled:       false,
 			WorkspaceName: "Symphony",
