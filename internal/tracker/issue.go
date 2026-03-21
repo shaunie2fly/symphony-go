@@ -45,7 +45,7 @@ func NewTrackerClient(cfg *config.TrackerConfig) (TrackerClient, error) {
 	case "jira":
 		return NewJiraClient(cfg.Endpoint, cfg.Email, cfg.APIKey), nil
 	case "github":
-		return NewGitHubClient(cfg.ProjectSlug, cfg.APIKey)
+		return NewGitHubClient(cfg.ProjectSlug, cfg.APIKey, cfg.ActiveStates, cfg.TerminalStates)
 	default:
 		return nil, &TrackerError{
 			Kind:    ErrUnsupportedTrackerKind,

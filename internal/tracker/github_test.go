@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewGitHubClient_ValidSlug(t *testing.T) {
-	client, err := NewGitHubClient("owner/repo", "test-token")
+	client, err := NewGitHubClient("owner/repo", "test-token", nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestNewGitHubClient_InvalidSlug(t *testing.T) {
 		{"owner/"},
 	}
 	for _, tc := range tests {
-		_, err := NewGitHubClient(tc.slug, "token")
+		_, err := NewGitHubClient(tc.slug, "token", nil, nil)
 		if err == nil {
 			t.Errorf("expected error for slug %q", tc.slug)
 			continue
@@ -582,5 +582,182 @@ func TestGitHubFetchIssueStatesByIDs_NotFoundSkipped(t *testing.T) {
 	}
 	if len(issues) != 0 {
 		t.Errorf("expected 0 issues, got %d", len(issues))
+	}
+}
+
+// TestNewGitHubClient_LabelStates verifies that non-native active/terminal
+// states are stored as label states with terminal states taking precedence.
+func TestNewGitHubClient_LabelStates(t *testing.T) {
+	active := []string{"in-progress", "review"}
+	terminal := []string{"closed", "done"}
+
+	client, err := NewGitHubClient("owner/repo", "token", active, terminal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// "done" is a non-native terminal state; "in-progress" and "review" are
+	// non-native active states. "closed" is native and should be excluded.
+	// Terminal states come first in labelStates.
+	if len(client.labelStates) != 3 {
+		t.Fatalf("expected 3 label states, got %d: %v", len(client.labelStates), client.labelStates)
+	}
+	if client.labelStates[0] != "done" {
+		t.Errorf("expected labelStates[0]=done (terminal first), got %q", client.labelStates[0])
+	}
+}
+
+// TestNewGitHubClient_NoLabelStates verifies that when only native states are
+// configured, labelStates is empty.
+func TestNewGitHubClient_NoLabelStates(t *testing.T) {
+	client, err := NewGitHubClient("owner/repo", "token", []string{"open"}, []string{"closed"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(client.labelStates) != 0 {
+		t.Errorf("expected no label states, got %v", client.labelStates)
+	}
+}
+
+// TestGitHubFetchCandidateIssues_LabelFilter verifies that when label-based
+// active states are configured, the labels query parameter is included in the URL.
+func TestGitHubFetchCandidateIssues_LabelFilter(t *testing.T) {
+	var receivedURL string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedURL = r.URL.String()
+		json.NewEncoder(w).Encode([]githubIssue{})
+	}))
+	defer server.Close()
+
+	client := &GitHubClient{
+		baseURL:    server.URL,
+		token:      "test-token",
+		owner:      "owner",
+		repo:       "repo",
+		httpClient: &http.Client{},
+	}
+
+	_, err := client.FetchCandidateIssues("owner/repo", []string{"in-progress", "review"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should default to state=open and filter by labels
+	if !strings.Contains(receivedURL, "state=open") {
+		t.Errorf("expected state=open in URL, got %q", receivedURL)
+	}
+	if !strings.Contains(receivedURL, "labels=") {
+		t.Errorf("expected labels= parameter in URL, got %q", receivedURL)
+	}
+	if !strings.Contains(receivedURL, "in-progress") {
+		t.Errorf("expected in-progress label in URL, got %q", receivedURL)
+	}
+	if !strings.Contains(receivedURL, "review") {
+		t.Errorf("expected review label in URL, got %q", receivedURL)
+	}
+}
+
+// TestGitHubFetchCandidateIssues_NativePlusLabelFilter verifies that mixing a
+// native state ("open") with a label state results in a label-filtered request.
+func TestGitHubFetchCandidateIssues_NativePlusLabelFilter(t *testing.T) {
+	var receivedURL string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedURL = r.URL.String()
+		json.NewEncoder(w).Encode([]githubIssue{})
+	}))
+	defer server.Close()
+
+	client := &GitHubClient{
+		baseURL:    server.URL,
+		token:      "test-token",
+		owner:      "owner",
+		repo:       "repo",
+		httpClient: &http.Client{},
+	}
+
+	_, err := client.FetchCandidateIssues("owner/repo", []string{"open", "in-progress"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(receivedURL, "state=open") {
+		t.Errorf("expected state=open in URL, got %q", receivedURL)
+	}
+	if !strings.Contains(receivedURL, "labels=in-progress") {
+		t.Errorf("expected labels=in-progress in URL, got %q", receivedURL)
+	}
+}
+
+// TestGitHubFetchCandidateIssues_LabelStateResolution verifies that when an
+// issue has a label matching a configured label state, its State field reflects
+// the label name rather than the native GitHub state.
+func TestGitHubFetchCandidateIssues_LabelStateResolution(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode([]githubIssue{
+			{
+				Number: 1,
+				Title:  "Work item",
+				State:  "open",
+				Labels: []githubLabel{{Name: "in-progress"}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := &GitHubClient{
+		baseURL:     server.URL,
+		token:       "test-token",
+		owner:       "owner",
+		repo:        "repo",
+		httpClient:  &http.Client{},
+		labelStates: []string{"in-progress"},
+	}
+
+	issues, err := client.FetchCandidateIssues("owner/repo", []string{"in-progress"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(issues))
+	}
+	if issues[0].State != "in-progress" {
+		t.Errorf("expected state=in-progress (resolved from label), got %q", issues[0].State)
+	}
+}
+
+// TestGitHubFetchIssueStatesByIDs_LabelStateResolution verifies that
+// FetchIssueStatesByIDs resolves state from labels using the stored labelStates.
+func TestGitHubFetchIssueStatesByIDs_LabelStateResolution(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(githubIssue{
+			Number: 5,
+			Title:  "In flight",
+			State:  "open",
+			Labels: []githubLabel{{Name: "in-progress"}},
+		})
+	}))
+	defer server.Close()
+
+	client := &GitHubClient{
+		baseURL:     server.URL,
+		token:       "test-token",
+		owner:       "owner",
+		repo:        "repo",
+		httpClient:  &http.Client{},
+		labelStates: []string{"in-progress"},
+	}
+
+	issues, err := client.FetchIssueStatesByIDs([]string{"5"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d", len(issues))
+	}
+	if issues[0].State != "in-progress" {
+		t.Errorf("expected state=in-progress (resolved from label), got %q", issues[0].State)
 	}
 }
