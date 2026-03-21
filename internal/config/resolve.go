@@ -39,6 +39,14 @@ func ResolveConfig(cfg *Config) (*Config, error) {
 	resolved.Workspace.Root = expandHome(resolved.Workspace.Root)
 	resolved.Workspace.Root = expandPath(resolved.Workspace.Root)
 
+	// Resolve $VAR in mini_agent.api_key
+	resolved.MiniAgent.APIKey = resolveEnvVar(resolved.MiniAgent.APIKey)
+
+	// Fallback to MINIMAX_API_KEY env var if still empty
+	if resolved.MiniAgent.APIKey == "" {
+		resolved.MiniAgent.APIKey = os.Getenv("MINIMAX_API_KEY")
+	}
+
 	// Normalize per-state concurrency: lowercase keys, drop invalid values
 	resolved.Agent.MaxConcurrentAgentsByState = normalizePerStateConcurrency(
 		resolved.Agent.MaxConcurrentAgentsByState,

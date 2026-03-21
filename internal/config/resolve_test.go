@@ -114,3 +114,67 @@ func TestResolveConfig_LiteralValueNotResolved(t *testing.T) {
 		t.Errorf("expected literal token, got %q", resolved.Tracker.APIKey)
 	}
 }
+
+func TestResolveConfig_MiniAgentAPIKeyEnvVar(t *testing.T) {
+	t.Setenv("TEST_MINIMAX_KEY", "minimax-secret-key")
+
+	cfg := DefaultConfig()
+	cfg.MiniAgent.APIKey = "$TEST_MINIMAX_KEY"
+
+	resolved, err := ResolveConfig(&cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resolved.MiniAgent.APIKey != "minimax-secret-key" {
+		t.Errorf("expected mini_agent.api_key=minimax-secret-key, got %q", resolved.MiniAgent.APIKey)
+	}
+}
+
+func TestResolveConfig_MiniAgentAPIKeyFallbackToEnv(t *testing.T) {
+	t.Setenv("MINIMAX_API_KEY", "fallback-minimax-key")
+
+	cfg := DefaultConfig()
+	// api_key is empty — should fall back to MINIMAX_API_KEY env var
+	cfg.MiniAgent.APIKey = ""
+
+	resolved, err := ResolveConfig(&cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resolved.MiniAgent.APIKey != "fallback-minimax-key" {
+		t.Errorf("expected fallback to MINIMAX_API_KEY, got %q", resolved.MiniAgent.APIKey)
+	}
+}
+
+func TestResolveConfig_MiniAgentAPIKeyLiteralNotResolved(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.MiniAgent.APIKey = "literal-api-key"
+
+	resolved, err := ResolveConfig(&cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resolved.MiniAgent.APIKey != "literal-api-key" {
+		t.Errorf("expected literal api key unchanged, got %q", resolved.MiniAgent.APIKey)
+	}
+}
+
+func TestResolveConfig_MiniAgentAPIKeyEnvVarEmpty(t *testing.T) {
+	os.Unsetenv("MINIMAX_API_KEY")
+
+	cfg := DefaultConfig()
+	cfg.MiniAgent.APIKey = "$NONEXISTENT_MINIMAX_VAR"
+
+	resolved, err := ResolveConfig(&cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Unset env var resolves to empty string
+	if resolved.MiniAgent.APIKey != "" {
+		t.Errorf("expected empty api_key for missing env var, got %q", resolved.MiniAgent.APIKey)
+	}
+}
